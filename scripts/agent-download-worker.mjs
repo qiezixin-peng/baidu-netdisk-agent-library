@@ -72,15 +72,26 @@ async function getShareContext(page, source) {
   }
   await page.waitForFunction(() => {
     const locals = window.__DISK_SHARE_V2_LOCALS__ || {};
-    return Boolean(locals.shareid && locals.share_uk && locals.bdstoken);
+    let dumped = {};
+    try { dumped = window.locals?.dump?.() || {}; } catch {}
+    const value = input => input && typeof input === 'object' && 'value' in input ? input.value : input;
+    return Boolean(
+      value(locals.shareid || locals.share_id || dumped.shareid) &&
+      value(locals.share_uk || locals.uk || dumped.share_uk) &&
+      value(locals.bdstoken || dumped.bdstoken)
+    );
   }, undefined, { timeout: 20000 });
   return page.evaluate(() => {
     const locals = window.__DISK_SHARE_V2_LOCALS__ || {};
+    let dumped = {};
+    try { dumped = window.locals?.dump?.() || {}; } catch {}
+    const value = input => input && typeof input === 'object' && 'value' in input ? input.value : input;
     const rawCookie = document.cookie.split(';').map(value => value.trim()).find(value => value.startsWith('BDCLND='))?.slice(7) || '';
     return {
-      shareid: String(locals.shareid || ''), shareUk: String(locals.share_uk || ''),
-      sekey: String(locals.currentSekey || locals.sekey || (rawCookie ? decodeURIComponent(rawCookie) : '')),
-      bdstoken: String(locals.bdstoken || ''),
+      shareid: String(value(locals.shareid || locals.share_id || dumped.shareid) || ''),
+      shareUk: String(value(locals.share_uk || locals.uk || dumped.share_uk) || ''),
+      sekey: String(value(locals.currentSekey || locals.sekey || dumped.currentSekey || dumped.sekey) || (rawCookie ? decodeURIComponent(rawCookie) : '')),
+      bdstoken: String(value(locals.bdstoken || dumped.bdstoken) || ''),
     };
   });
 }
@@ -326,7 +337,8 @@ async function processJob(task, page, job) {
       }
     }
     const status = failed === 0 ? 'complete' : completed > 0 ? 'partial' : 'error';
-    updateJob(job.id, status, `下载完成 ${completed}/${rows.length}，失败 ${failed}`, outputDir);
+    updateJob(job.id, status,
+      `${previewMode ? '内容检查' : '下载'}完成 ${completed}/${rows.length}，失败 ${failed}`, outputDir);
     return { jobId: job.id, mode: previewMode ? 'preview' : 'download', status, completed, failed, outputDir };
   } finally {
     await fs.rm(taskTemp, { recursive: true, force: true }).catch(() => {});
