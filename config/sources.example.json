@@ -1,0 +1,9 @@
+[
+  {
+    "id": 1,
+    "name": "示例物料来源",
+    "rootName": "分享中的根目录名称",
+    "url": "https://pan.baidu.com/s/替换为分享标识?pwd=abcd",
+    "pwd": "abcd"
+  }
+]

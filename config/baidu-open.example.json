@@ -1,0 +1,6 @@
+{
+  "appKey": "百度开放平台 AppKey",
+  "secretKey": "百度开放平台 SecretKey",
+  "appName": "开放平台中创建的应用名称",
+  "redirectUri": "oob"
+}

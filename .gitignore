@@ -1,0 +1,9 @@
+data/library.sqlite*
+data/import/*.jsonl
+data/browser-profile/
+data/runtime/
+config/baidu-open.local.json
+config/sources.json
+node_modules/
+tools/
+*.log

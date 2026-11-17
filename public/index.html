@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>百度网盘物料库</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">AGENT-READY MATERIAL LIBRARY</p>
+      <h1>百度网盘物料库</h1>
+      <p class="subtitle">粘贴分享链接，自动递归索引；先浏览和预览，再挑选真正需要下载的素材。</p>
+    </div>
+    <div class="header-actions">
+      <button id="importButton" class="primary">＋ 导入网盘链接</button>
+      <button id="jobsButton" class="quiet">下载任务</button>
+      <button id="loginButton" class="quiet">登录百度网盘</button>
+    </div>
+  </header>
+
+  <main>
+    <section id="loginPanel" class="login-panel hidden" aria-label="登录百度网盘">
+      <div class="login-copy">
+        <span class="pill">百度官方认证</span>
+        <h2>选择登录方式</h2>
+        <p>项目不会收集账号密码、Cookie 或验证码。认证在百度官方页面完成。</p>
+      </div>
+      <div class="login-methods">
+        <button class="login-card" data-mode="qr">
+          <span class="login-icon">▦</span>
+          <strong>扫码登录</strong>
+          <small>使用百度网盘 App 扫码</small>
+        </button>
+        <button class="login-card" data-mode="sms">
+          <span class="login-icon">✆</span>
+          <strong>手机号验证码登录</strong>
+          <small>在百度官方页面接收验证码</small>
+        </button>
+      </div>
+      <button id="closeLogin" class="quiet">关闭</button>
+    </section>
+
+    <section id="importPanel" class="login-panel hidden" aria-label="导入百度网盘分享">
+      <div class="login-copy">
+        <span class="pill">自动递归导入</span>
+        <h2>添加百度网盘分享</h2>
+        <p>可直接粘贴“链接 + 提取码”的整段分享文字。Agent 会继续读取子目录和压缩包内部目录。</p>
+      </div>
+      <form id="importForm" class="import-form">
+        <label class="share-input">分享链接或整段分享文字<textarea id="shareUrl" name="url" required rows="3" placeholder="链接: https://pan.baidu.com/s/... 提取码: xxxx"></textarea></label>
+        <label>提取码<input id="sharePwd" name="pwd" maxlength="4" placeholder="可留空"></label>
+        <label>资料库名称<input id="shareName" name="name" maxlength="120" placeholder="可留空，自动识别"></label>
+        <div class="form-actions"><button type="submit" class="primary">开始自动导入</button><button id="closeImport" type="button" class="quiet">取消</button></div>
+        <p id="importMessage" class="form-message"></p>
+      </form>
+    </section>
+
+    <section id="jobsPanel" class="jobs-panel hidden" aria-label="下载任务">
+      <div><p class="eyebrow">PERSISTENT DOWNLOAD QUEUE</p><h2>下载任务</h2></div>
+      <div id="downloadJobs" class="job-list"></div>
+      <button id="closeJobs" class="quiet">关闭</button>
+    </section>
+
+    <section class="stats" id="stats"></section>
+
+    <section class="workspace">
+      <aside>
+        <div class="aside-heading">
+          <h2>资料来源</h2>
+          <span id="sourceCount"></span>
+        </div>
+        <nav id="sources"></nav>
+      </aside>
+
+      <section class="content">
+        <div class="search-row">
+          <input id="searchInput" type="search" placeholder="搜索歌曲、歌手、编号、文件名……" autocomplete="off">
+          <select id="typeFilter" aria-label="文件类型">
+            <option value="">全部类型</option>
+            <option value="folder">文件夹</option>
+            <option value="audio">音频</option>
+            <option value="archive">压缩包</option>
+            <option value="document">文档</option>
+          </select>
+          <label class="system-toggle"><input id="includeSystem" type="checkbox"> 显示系统垃圾文件</label>
+          <button id="searchButton" class="primary">搜索</button>
+        </div>
+        <div class="result-heading">
+          <div>
+            <p class="eyebrow" id="resultMode">目录</p>
+            <h2 id="resultTitle">全部来源</h2>
+          </div>
+          <span id="resultCount"></span>
+        </div>
+        <div id="selectionBar" class="selection-bar hidden">
+          <strong><span id="selectionCount">0</span> 项已选择</strong>
+          <div><button id="clearSelection" class="quiet">清空</button><button id="makeDownloadPlan" class="primary">交给 Agent 下载</button></div>
+        </div>
+        <div id="empty" class="empty hidden"></div>
+        <div id="results" class="results"></div>
+      </section>
+    </section>
+  </main>
+  <aside id="previewDrawer" class="preview-drawer hidden" aria-label="文件预览">
+    <button id="closePreview" class="drawer-close" aria-label="关闭预览">×</button>
+    <div id="previewContent"></div>
+  </aside>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

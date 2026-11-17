@@ -1,0 +1,27 @@
+{
+  "name": "baidu-material-library",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "供 Agent 调用的百度网盘分享索引、检索、预览与选择性下载后端",
+  "scripts": {
+    "init": "node src/cli.mjs init",
+    "auth": "node src/cli.mjs auth",
+    "auth:fast": "node src/cli.mjs fast-auth",
+    "doctor": "node src/cli.mjs doctor",
+    "start": "node src/cli.mjs serve",
+    "status": "node src/cli.mjs status",
+    "archives:transfer": "ego-browser nodejs < scripts/ego-index-zip-via-transfer.mjs",
+    "imports:process": "node scripts/process-import-jobs.mjs",
+    "downloads:process": "node src/cli.mjs download-run",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@mary/rar": "npm:@jsr/mary__rar@^0.2.2",
+    "@zip.js/zip.js": "2.25.0",
+    "node-unrar-js": "2.0.2"
+  }
+}
