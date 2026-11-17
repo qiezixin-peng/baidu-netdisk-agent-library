@@ -83,6 +83,7 @@ function buildOpenUrl(sourceUrl, item) {
 }
 
 export function createDownloadJob(db, input = {}) {
+  const mode = input.mode === 'preview' ? 'preview' : 'download';
   const itemIds = [...new Set((Array.isArray(input.itemIds) ? input.itemIds : []).map(Number).filter(Number.isInteger))].slice(0, 500);
   const archiveEntryIds = [...new Set((Array.isArray(input.archiveEntryIds) ? input.archiveEntryIds : []).map(Number).filter(Number.isInteger))].slice(0, 500);
   const items = itemIds.length ? db.prepare(`SELECT i.*,s.name source_name,s.url source_url FROM items i JOIN sources s ON s.id=i.source_id WHERE i.id IN (${itemIds.map(() => '?').join(',')})`).all(...itemIds) : [];
@@ -98,8 +99,9 @@ export function createDownloadJob(db, input = {}) {
   db.exec('BEGIN');
   let jobId;
   try {
-    const created = db.prepare(`INSERT INTO download_jobs(status,item_count,total_size,message,created_at,updated_at)
-      VALUES('queued',?,?, '等待 Agent 下载',?,?)`).run(plan.length, plan.reduce((sum, entry) => sum + Number(entry.size || 0), 0), now, now);
+    const created = db.prepare(`INSERT INTO download_jobs(mode,status,item_count,total_size,message,created_at,updated_at)
+      VALUES(?,'queued',?,?, ?,?,?)`).run(mode, plan.length, plan.reduce((sum, entry) => sum + Number(entry.size || 0), 0),
+        mode === 'preview' ? '等待 Agent 临时读取内容' : '等待 Agent 下载', now, now);
     jobId = Number(created.lastInsertRowid);
     const insert = db.prepare(`INSERT INTO download_job_entries
       (job_id,kind,item_id,archive_entry_id,name,source_id,archive_name,internal_path,size,status)
@@ -112,8 +114,10 @@ export function createDownloadJob(db, input = {}) {
     db.exec('ROLLBACK');
     throw error;
   }
-  return { httpStatus: 201, ok: true, jobId, status: 'queued', count: plan.length, plan,
-    note: '下载任务已保存；Agent 将自动下载普通文件并定点提取压缩包内部文件。' };
+  return { httpStatus: 201, ok: true, jobId, mode, status: 'queued', count: plan.length, plan,
+    note: mode === 'preview'
+      ? '内容检查任务已保存；文件仅写入临时目录，ZIP 只提取选中条目。'
+      : '下载任务已保存；Agent 将自动下载普通文件并定点提取压缩包内部文件。' };
 }
 
 export function createServer({ port = 3210, host = '127.0.0.1' } = {}) {

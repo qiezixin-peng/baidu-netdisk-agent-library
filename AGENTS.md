@@ -15,6 +15,7 @@
 - 扫描结果写入 `data/import/*.jsonl`，随后用 `node src/cli.mjs import <文件>` 导入。
 - Agent 查询只使用 CLI 或 `/api/agent/*` JSON API，不把前端页面作为工作流入口。
 - 搜索必须同时检查普通文件和 `archiveEntries`；压缩包内部使用 `archive <itemId> [包内路径]` 或 `/api/agent/archive` 递归浏览。
+- 名称和目录浏览不等于内容预览。需要理解文件实际内容时运行 `inspect item:<ID>` 或 `inspect entry:<ID>`；Agent 读取返回的临时文件后必须运行 `preview-clean <任务ID>`。ZIP 只读取所选条目；RAR 返回需要整包的限制，不得未经用户确认把整包当预览下载。
 - 压缩包目录优先通过百度官方 `zipfile/list` 元数据接口索引；ZIP 使用 `zip.js` 读中央目录，RAR3/RAR5 使用 `@mary/rar` 跳过数据区，均不下载整包。
 - 新分享链接优先通过 `node src/cli.mjs add-share <链接> <提取码>` 创建任务；也可调用 `/api/imports`。
 - 导入任务优先把分享根目录临时转存到 `/apps/{appName}/Agent自动导入_{jobId}`，使用官方 `listall + recursion=1` 快速递归导出；失败时自动回退逐目录扫描，任务结束后删除 Agent 创建的隔离副本。

@@ -57,6 +57,18 @@ test('Agent 可把普通文件和包内文件固化为下载任务', () => {
   db.close();
 });
 
+test('内容检查任务与正式下载任务分离', () => {
+  const db = new DatabaseSync(':memory:');
+  migrate(db);
+  db.prepare(`INSERT INTO sources(id,name,root_name,url,pwd) VALUES(1,'来源','根','https://example.test','')`).run();
+  db.prepare(`INSERT INTO items(id,source_id,path,parent_path,name,extension,size)
+    VALUES(1,1,'/根/说明.txt','/根','说明.txt','txt',10)`).run();
+  const result = createDownloadJob(db, { itemIds: [1], mode: 'preview' });
+  assert.equal(result.mode, 'preview');
+  assert.equal(db.prepare('SELECT mode FROM download_jobs WHERE id=?').get(result.jobId).mode, 'preview');
+  db.close();
+});
+
 test('目录检查点可在完整扫描结束前进入搜索库', async t => {
   const db = new DatabaseSync(':memory:');
   migrate(db);

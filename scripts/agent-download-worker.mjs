@@ -15,6 +15,7 @@ const downloadRoot = 'D:/三喜/下载的物料';
 const workspaceTemp = path.resolve('D:/三喜/临时文件');
 const pcsExecutable = `${projectRoot}/tools/BaiduPCS-Go/BaiduPCS-Go-v4.0.2-windows-x64/BaiduPCS-Go.exe`;
 const requestedJobId = Number(globalThis.BAIDU_DOWNLOAD_JOB_ID || 0);
+const previewMaxBytes = 256 * 1024 * 1024;
 
 const db = new DatabaseSync(databasePath);
 db.exec('PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;');
@@ -208,7 +209,11 @@ async function pcsFallback(remotePath, destinationDir, cookies, taskTemp) {
 }
 
 async function processJob(task, page, job) {
-  const outputDir = path.resolve(downloadRoot, `任务-${job.id}`);
+  const previewMode = job.mode === 'preview';
+  const outputDir = previewMode
+    ? path.resolve(workspaceTemp, `百度网盘内容预览-${job.id}`)
+    : path.resolve(downloadRoot, `任务-${job.id}`);
+  if (previewMode && !outputDir.startsWith(`${workspaceTemp}${path.sep}`)) throw new Error('unsafe_preview_path');
   const taskTemp = path.resolve(workspaceTemp, `百度网盘下载任务-${job.id}`);
   if (!taskTemp.startsWith(`${workspaceTemp}${path.sep}`)) throw new Error('unsafe_temp_path');
   await fs.mkdir(outputDir, { recursive: true });
@@ -232,7 +237,28 @@ async function processJob(task, page, job) {
       const folder = await ensureTempFolder(page, cloudRoot, share.bdstoken);
       if (![0, -8].includes(Number(folder.errno))) throw new Error(`create_temp_folder_errno_${folder.errno}`);
       const uniqueItems = [...new Map(sourceRows.map(row => [row.item_id, row])).values()];
-      const transfer = await transferBatch(page, uniqueItems, share, cloudRoot);
+      const skippedEntryIds = new Set();
+      const transferItems = previewMode ? uniqueItems.filter(item => {
+        const related = sourceRows.filter(row => row.item_id === item.item_id);
+        const archiveSelections = related.filter(row => row.kind === 'archive_entry');
+        for (const row of related.filter(row => row.kind === 'item')) {
+          let reason = '';
+          if (item.is_dir) reason = 'folder_content_use_browse';
+          else if (['zip', 'rar', '7z', 'tar', 'gz'].includes(item.item_extension)) reason = 'archive_content_use_entry_preview';
+          else if (Number(item.item_size || 0) > previewMaxBytes) reason = 'preview_too_large_select_download';
+          if (reason) {
+            updateEntry(row.job_entry_id, 'error', null, reason);
+            skippedEntryIds.add(row.job_entry_id);
+            failed += 1;
+          }
+        }
+        return archiveSelections.length > 0 || related.some(row => row.kind === 'item' && !skippedEntryIds.has(row.job_entry_id));
+      }) : uniqueItems;
+      if (!transferItems.length) {
+        await deleteTransferred(page, [cloudRoot], share.bdstoken).catch(() => {});
+        continue;
+      }
+      const transfer = await transferBatch(page, transferItems, share, cloudRoot);
       if (Number(transfer.errno) !== 0) throw new Error(`transfer_errno_${transfer.errno}`);
       const transferred = Array.isArray(transfer.extra?.list) ? transfer.extra.list : [];
       const byFsId = new Map(transferred.map(entry => [String(entry.from_fs_id), entry.to]));
@@ -240,8 +266,8 @@ async function processJob(task, page, job) {
       const cookies = await cookieHeader(page);
       const metadata = await getMetadata(transferredPaths, cookies);
       try {
-        for (const item of uniqueItems) {
-          const related = sourceRows.filter(row => row.item_id === item.item_id);
+        for (const item of transferItems) {
+          const related = sourceRows.filter(row => row.item_id === item.item_id && !skippedEntryIds.has(row.job_entry_id));
           const remotePath = byFsId.get(String(item.fs_id));
           const meta = remotePath ? metadata.get(remotePath) : null;
           if (!remotePath) {
@@ -255,6 +281,11 @@ async function processJob(task, page, job) {
           if (wholeRows.length) {
             try {
               const destination = path.join(sourceOutput, ...String(item.item_path).split('/').filter(Boolean).map(safeSegment));
+              if (previewMode && item.is_dir) throw new Error('folder_content_use_browse');
+              if (previewMode && ['zip', 'rar', '7z', 'tar', 'gz'].includes(item.item_extension)) {
+                throw new Error('archive_content_use_entry_preview');
+              }
+              if (previewMode && Number(item.item_size || 0) > previewMaxBytes) throw new Error('preview_too_large_select_download');
               if (item.is_dir) {
                 await pcsFallback(remotePath, path.dirname(destination), cookies, taskTemp);
               } else {
@@ -276,6 +307,7 @@ async function processJob(task, page, job) {
               if (item.item_extension === 'zip') {
                 await extractZip(meta.dlink, cookies, item, selections, archiveOutput);
               } else if (item.item_extension === 'rar') {
+                if (previewMode) throw new Error('rar_preview_requires_full_archive');
                 const archiveFile = path.join(taskTemp, `${item.item_id}-${safeSegment(item.item_name)}`);
                 await downloadDirect(meta.dlink, archiveFile, cookies, item.item_size);
                 await extractRar(archiveFile, selections, archiveOutput, taskTemp);
@@ -295,7 +327,7 @@ async function processJob(task, page, job) {
     }
     const status = failed === 0 ? 'complete' : completed > 0 ? 'partial' : 'error';
     updateJob(job.id, status, `下载完成 ${completed}/${rows.length}，失败 ${failed}`, outputDir);
-    return { jobId: job.id, status, completed, failed, outputDir };
+    return { jobId: job.id, mode: previewMode ? 'preview' : 'download', status, completed, failed, outputDir };
   } finally {
     await fs.rm(taskTemp, { recursive: true, force: true }).catch(() => {});
   }

@@ -12,6 +12,23 @@ const [command = 'help', ...args] = process.argv.slice(2);
 const db = command === 'serve' ? null : openDatabase();
 const sleep = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
 
+function parseSelection(values) {
+  const itemIds = [];
+  const archiveEntryIds = [];
+  for (const token of values.flatMap(value => value.split(','))) {
+    const match = token.match(/^(item|entry):(\d+)$/i);
+    if (!match) continue;
+    (match[1].toLowerCase() === 'item' ? itemIds : archiveEntryIds).push(Number(match[2]));
+  }
+  return { itemIds, archiveEntryIds };
+}
+
+function parseLastJsonLine(text, fallbackError = 'worker_no_structured_result') {
+  const line = String(text || '').split(/\r?\n/).filter(value => value.trim().startsWith('{')).at(-1);
+  if (!line) return { ok: false, error: String(text || fallbackError).trim() || fallbackError };
+  try { return JSON.parse(line); } catch { return { ok: false, error: fallbackError, raw: line.slice(0, 500) }; }
+}
+
 function startImportWorker() {
   const child = spawn(process.execPath, [path.join(projectRoot, 'scripts', 'process-import-jobs.mjs')], {
     cwd: projectRoot, detached: true, windowsHide: true, stdio: 'ignore',
@@ -127,13 +144,7 @@ try {
       FROM import_jobs j JOIN sources s ON s.id=j.source_id ORDER BY j.id DESC LIMIT 100`).all();
     console.log(JSON.stringify({ jobs }, null, 2));
   } else if (command === 'plan' || command === 'download') {
-    const itemIds = [];
-    const archiveEntryIds = [];
-    for (const token of args.flatMap(value => value.split(','))) {
-      const match = token.match(/^(item|entry):(\d+)$/i);
-      if (!match) continue;
-      (match[1].toLowerCase() === 'item' ? itemIds : archiveEntryIds).push(Number(match[2]));
-    }
+    const { itemIds, archiveEntryIds } = parseSelection(args);
     const result = createDownloadJob(db, { itemIds, archiveEntryIds });
     if (result.error) throw new Error(result.error);
     const { httpStatus, ...output } = result;
@@ -156,6 +167,47 @@ try {
         console.log(JSON.stringify({ ...output, worker: JSON.parse(worker.split(/\r?\n/).filter(line => line.trim().startsWith('{')).at(-1)) }, null, 2));
       }
     }
+  } else if (command === 'inspect') {
+    const { itemIds, archiveEntryIds } = parseSelection(args);
+    const result = createDownloadJob(db, { itemIds, archiveEntryIds, mode: 'preview' });
+    if (result.error) throw new Error(result.error);
+    const workerText = await runEgoScript(path.join(projectRoot, 'scripts', 'agent-download-worker.mjs'), { BAIDU_DOWNLOAD_JOB_ID: result.jobId });
+    const worker = parseLastJsonLine(workerText);
+    const entries = db.prepare('SELECT id,kind,name,internal_path,size,status,output_path,error FROM download_job_entries WHERE job_id=? ORDER BY id').all(result.jobId);
+    const textExtensions = new Set(['txt', 'md', 'json', 'csv', 'xml', 'html', 'htm', 'log', 'srt', 'lrc']);
+    const previews = entries.map(entry => {
+      const extension = path.extname(entry.name || '').slice(1).toLowerCase();
+      let textContent = null;
+      if (entry.status === 'complete' && entry.output_path && textExtensions.has(extension)) {
+        try {
+          const stat = fs.statSync(entry.output_path);
+          if (stat.isFile() && stat.size <= 2 * 1024 * 1024) textContent = fs.readFileSync(entry.output_path, 'utf8').slice(0, 64 * 1024);
+        } catch {}
+      }
+      return { ...entry, textContent };
+    });
+    console.log(JSON.stringify({ ...result, worker, previews, cleanupCommand: `node src/cli.mjs preview-clean ${result.jobId}` }, null, 2));
+  } else if (command === 'preview-run') {
+    const jobId = Number(args[0]);
+    if (!jobId) throw new Error('用法：node src/cli.mjs preview-run <预览任务ID>');
+    const job = db.prepare("SELECT * FROM download_jobs WHERE id=? AND mode='preview'").get(jobId);
+    if (!job) throw new Error(`找不到预览任务 ${jobId}`);
+    const workerText = await runEgoScript(path.join(projectRoot, 'scripts', 'agent-download-worker.mjs'), { BAIDU_DOWNLOAD_JOB_ID: jobId });
+    const worker = parseLastJsonLine(workerText);
+    const previews = db.prepare('SELECT id,kind,name,internal_path,size,status,output_path,error FROM download_job_entries WHERE job_id=? ORDER BY id').all(jobId);
+    console.log(JSON.stringify({ ok: worker.ok !== false, jobId, worker, previews, cleanupCommand: `node src/cli.mjs preview-clean ${jobId}` }, null, 2));
+  } else if (command === 'preview-clean') {
+    const jobId = Number(args[0]);
+    if (!jobId) throw new Error('用法：node src/cli.mjs preview-clean <预览任务ID>');
+    const job = db.prepare("SELECT * FROM download_jobs WHERE id=? AND mode='preview'").get(jobId);
+    if (!job) throw new Error(`找不到预览任务 ${jobId}`);
+    const expected = path.resolve('D:/三喜/临时文件', `百度网盘内容预览-${jobId}`);
+    const output = job.output_dir ? path.resolve(job.output_dir) : expected;
+    if (output !== expected) throw new Error('unsafe_preview_cleanup_path');
+    fs.rmSync(output, { recursive: true, force: true });
+    db.prepare("UPDATE download_jobs SET status='cancelled',message='临时预览已清理',updated_at=? WHERE id=?")
+      .run(new Date().toISOString(), jobId);
+    console.log(JSON.stringify({ ok: true, jobId, removed: output }, null, 2));
   } else if (command === 'download-run') {
     const jobId = Number(args[0]);
     if (!jobId) throw new Error('用法：node src/cli.mjs download-run <下载任务ID>');
@@ -260,7 +312,7 @@ try {
     const info = await app.listen();
     console.log(`百度网盘物料库已启动：http://${info.host}:${info.port}`);
   } else {
-    console.log('Agent 命令：doctor | auth | fast-auth [--force] | fast-status | account-status | account-switch | account-bind | add-share <链接或整段分享文字> [提取码] | job <ID> | job-resume <ID> | jobs | wait <ID> [秒] | search <关键词> | plan item:<ID> entry:<ID> | download item:<ID> entry:<ID> | download-run <任务ID> | download-jobs');
+    console.log('Agent 命令：doctor | auth | fast-auth [--force] | fast-status | account-status | account-switch | account-bind | add-share <链接或整段分享文字> [提取码] | job <ID> | job-resume <ID> | jobs | wait <ID> [秒] | search <关键词> | inspect item:<ID> entry:<ID> | preview-run <任务ID> | preview-clean <任务ID> | plan item:<ID> entry:<ID> | download item:<ID> entry:<ID> | download-run <任务ID> | download-jobs');
   }
 } finally {
   db?.close();

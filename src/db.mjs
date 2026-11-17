@@ -89,6 +89,7 @@ export function migrate(db) {
     CREATE INDEX IF NOT EXISTS idx_import_jobs_status ON import_jobs(status, updated_at);
     CREATE TABLE IF NOT EXISTS download_jobs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      mode TEXT NOT NULL DEFAULT 'download',
       status TEXT NOT NULL DEFAULT 'queued',
       item_count INTEGER NOT NULL DEFAULT 0,
       total_size INTEGER NOT NULL DEFAULT 0,
@@ -115,6 +116,8 @@ export function migrate(db) {
     CREATE INDEX IF NOT EXISTS idx_download_jobs_status ON download_jobs(status, updated_at);
     CREATE INDEX IF NOT EXISTS idx_download_entries_job ON download_job_entries(job_id, status);
   `);
+  const downloadJobColumns = new Set(db.prepare('PRAGMA table_info(download_jobs)').all().map(column => column.name));
+  if (!downloadJobColumns.has('mode')) db.exec("ALTER TABLE download_jobs ADD COLUMN mode TEXT NOT NULL DEFAULT 'download'");
 }
 
 export function syncConfiguredSources(db) {

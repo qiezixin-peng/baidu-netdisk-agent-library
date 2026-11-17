@@ -38,12 +38,24 @@ node src/cli.mjs auth
 node src/cli.mjs add-share "https://pan.baidu.com/s/...?pwd=xxxx" "xxxx"
 node src/cli.mjs wait <任务ID> 3600
 node src/cli.mjs search "目标关键词"
+node src/cli.mjs inspect item:<普通文件ID> entry:<ZIP包内条目ID>
 node src/cli.mjs download item:<普通文件ID> entry:<包内条目ID>
 ```
 
 `add-share` 会返回 JSON 格式的 `jobId` 并自动启动后台 Worker。Agent 也可用 `job <任务ID>` 非阻塞查询进度。`search` 会同时返回普通文件、压缩包内部条目以及 `coverage`；只有 `coverage.exhaustive=true` 时，Agent 才能把“没有命中”解释为完整资料库中确实不存在。
 
 `doctor` 是 Agent 的统一启动自检：一次返回当前账号会员等级、开放平台授权、普通来源异常、压缩包覆盖率以及待恢复任务。
+
+## “浏览”和“内容检查”的区别
+
+- `search`、`browse`、`archive` 和 `/api/agent/preview/:id` 返回的是元数据：名称、路径、大小、类型以及压缩包目录。
+- `inspect item:<ID>` 会把一个普通文件临时读取到 `D:\三喜\临时文件`，供 Agent 真正读取文本、查看图片、分析文档或试听音频；不写入正式下载目录。
+- `inspect entry:<ID>` 对 ZIP 使用 HTTP Range，只读取中央目录和所选条目的压缩字节，不下载整个 ZIP。
+- RAR 包内内容检查会明确返回 `rar_preview_requires_full_archive`，因为 RAR（尤其固实压缩）通常无法可靠地只取单个成员；只有用户确认正式下载后才允许下载整个 RAR。
+- 单个临时预览默认限制为 256 MiB。Agent 检查完成后运行 `preview-clean <任务ID>` 删除临时内容。
+- 浏览器中断后的预览任务用 `preview-run <任务ID>` 原地恢复，不重新创建选择。
+
+任何“看见文件内容”都必须从远端读取相应字节；本项目所说的“不下载压缩包”是指 ZIP 不下载整个包，只按需读取目标条目，而不是完全不传输数据。
 
 项目唯一需要用户操作的地方是百度官方扫码登录。`auth` 会先静默检查既有会话；会话有效时不打扰用户，会话失效时才打开百度官方登录页并将浏览器控制权交给用户。扫码完成后，Agent 接管同一浏览器会话并完成其余所有步骤。
 
@@ -83,6 +95,9 @@ node src/cli.mjs status
 node src/cli.mjs search "月缺"
 node src/cli.mjs browse 1 "/1 丁登音乐 歌曲物料/1000月缺"
 node src/cli.mjs archive 123 "/"
+node src/cli.mjs inspect item:12219
+node src/cli.mjs inspect entry:4988
+node src/cli.mjs preview-clean 1
 node src/cli.mjs plan item:12219 entry:4988
 node src/cli.mjs download item:12219 entry:4988
 node src/cli.mjs download-run 1
